@@ -6,46 +6,66 @@ from torch.autograd import Function
 torch.set_default_dtype(torch.float64)
 
 import os
-import numpy as np
+import autograd.numpy as np
 import torch.nn as nn
 import torch.optim as optim
 from sklearn.preprocessing import MinMaxScaler
 import matplotlib.pyplot as plt
+from autograd import grad
 
 # Import the wrapped loss and its gradient from your simulation module
-from ceviche_solver import wrapped_loss, grad_loss
+from ceviche_solver import wrapped_loss
+grad_loss = grad(wrapped_loss)
 
 # =============================================================================
 # Define the Custom Autograd Function for Simulation Loss
 # =============================================================================
 class SimLossFunction(Function):
     @staticmethod
-    def forward(ctx, phase_tensor):
-        # Convert torch tensor to numpy array (detached and on CPU)
+    def forward(ctx, phase_tensor, x_target, y_target):
+        # Convert the torch tensor to a numpy array (detached and on CPU)
         phase_vals = phase_tensor.detach().cpu().numpy()
         
+        # Convert x_target and y_target to numpy arrays if they are torch tensors
+        if torch.is_tensor(x_target):
+            x_target_np = x_target.detach().cpu().numpy()
+        else:
+            x_target_np = x_target
+        if torch.is_tensor(y_target):
+            y_target_np = y_target.detach().cpu().numpy()
+        else:
+            y_target_np = y_target
+        
         # Compute the simulation loss using the wrapped_loss function
-        loss_val = wrapped_loss(phase_vals)
+        loss_val = wrapped_loss(phase_vals, x_target_np, y_target_np)
+        print("Simulation loss value:", loss_val)
         
-        # Save phase_vals for the backward pass
+        # Save the necessary values for the backward pass
         ctx.phase_vals = phase_vals
+        ctx.x_target = x_target_np
+        ctx.y_target = y_target_np
         
-        # Return the loss as a torch tensor (keeping same dtype and device)
+        # Return the loss as a torch tensor (keeping the same dtype and device)
         return torch.tensor(loss_val, dtype=phase_tensor.dtype, device=phase_tensor.device)
 
     @staticmethod
     def backward(ctx, grad_output):
-        # Retrieve saved phase values from the forward pass
+        # Retrieve saved values
         phase_vals = ctx.phase_vals
+        x_target = ctx.x_target
+        y_target = ctx.y_target
         
-        # Compute gradient of the simulation loss with respect to phase_vals
-        phase_grad_np = grad_loss(phase_vals)
+        # Compute gradient of the simulation loss with respect to phase_vals,
+        # assuming grad_loss can now accept x_target and y_target
+        phase_grad_np = grad_loss(phase_vals, x_target, y_target)
         
         # Convert the numpy gradient back to a torch tensor
         phase_grad = torch.tensor(phase_grad_np, dtype=torch.float64, device=grad_output.device)
         
-        # Respect the chain rule by multiplying with grad_output
-        return grad_output * phase_grad
+        # The backward method should return as many outputs as there were inputs to forward.
+        # For x_target and y_target, if they are not meant to be optimized, return None.
+        return grad_output * phase_grad, None, None
+
 
 # =============================================================================
 # 1. Set Device
@@ -95,16 +115,16 @@ test_label = np.array(data['test_label'])
 print(f"Number of test samples: {len(test_input)}\n")
 
 # Normalize training inputs and apply same transformation to test inputs
-print("Normalizing training inputs ...")
-input_scaler = MinMaxScaler()
-train_input_norm = input_scaler.fit_transform(train_input)
-test_input_norm = input_scaler.transform(test_input)
+# print("Normalizing training inputs ...")
+# input_scaler = MinMaxScaler()
+# train_input_norm = input_scaler.fit_transform(train_input)
+# test_input_norm = input_scaler.transform(test_input)
 
 # Convert data to torch tensors and move to the proper device
-X_train = torch.tensor(train_input_norm, dtype=torch.float64).to(device)
+X_train = torch.tensor(train_input, dtype=torch.float64).to(device)
 Y_train = torch.tensor(train_label, dtype=torch.float64).to(device)
 
-X_test = torch.tensor(test_input_norm, dtype=torch.float64).to(device)
+X_test = torch.tensor(test_input, dtype=torch.float64).to(device)
 Y_test = torch.tensor(test_label, dtype=torch.float64).to(device)
 
 print("Data loaded, normalized, and converted to torch tensors.\n")
@@ -129,7 +149,7 @@ print("Optimizer ready.\n")
 # =============================================================================
 # 6. Training Loop using the Simulation Loss
 # =============================================================================
-num_epochs = 100
+num_epochs = 1
 print(f"Starting training for {num_epochs} epochs using simulation loss...")
 loss_history = []
 
@@ -140,17 +160,19 @@ for epoch in range(num_epochs):
     # Get the phase prediction from the KAN model
     phase_pred = model(X_train)
     
-    # Compute the simulation loss using our custom autograd function
-    sim_loss = SimLossFunction.apply(phase_pred)
-    
+    losses = []
+    for i in range(phase_pred.shape[0]):
+        loss_i = SimLossFunction.apply(phase_pred[i], X_train[i, 0]*(1e-6), X_train[i, 1]*(1e-6))
+        print(f"location: {X_train[i, 0]*(1e-6)}, {X_train[i, 1]*(1e-6)}")
+        losses.append(loss_i)
+    sim_loss = sum(losses) / len(losses)
+
     # Backward pass using the gradient from the simulation loss
     sim_loss.backward()
     optimizer.step()
 
     loss_history.append(sim_loss.item())
-    
-    if (epoch + 1) % 10 == 0 or epoch == 0:
-        print(f"Epoch [{epoch+1}/{num_epochs}], Simulation Loss: {sim_loss.item():.6f}")
+
 
 print("Training complete.\n")
 

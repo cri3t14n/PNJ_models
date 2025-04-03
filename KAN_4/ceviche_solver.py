@@ -126,6 +126,7 @@ def create_source(params, xp_fixed, phase_vals):
 
 
 def run_simulation(params, epsr, source):
+    print("Running simulation...")
     simulation = ceviche.fdfd_ez(params['omega'], params['dL'], epsr, params['NPML'])
     Ez = np.array(simulation.solve(source)[2])
     return Ez/np.max(np.abs(Ez))
@@ -134,11 +135,28 @@ def run_simulation(params, epsr, source):
 def loss_function_focus(phase_vals, xp_fixed, params, epsr, target_mask, alpha=1.0):
     source = create_source(params, xp_fixed, phase_vals)
     Ez = run_simulation(params, epsr, source)
+    
+    #saved Ez to file
+    ax2 = ceviche.viz.abs(Ez, outline=np.real(epsr), cbar=False, cmap='RdBu')
+    ax2.plot(params['x_coords_pml'], params['y_coords_pml'], 'k')
+    ax2.set_title("Abs Ez")
+    plt.show()
+
     intensity = np.abs(Ez)**2
     region_intensity = intensity[target_mask]
     mean_intensity = np.mean(region_intensity)
     return -alpha * mean_intensity
 
+
+params = setup_simulation_parameters()
+epsr = create_lens(params)
+
+def wrapped_loss(phase_vals, x_target, y_target, radius = 0.33e-6):
+    target_mask = circular_mask(params, x_target, y_target, radius)
+    return loss_function_focus(
+        phase_vals, xp_fixed, params, epsr,
+        target_mask, alpha=1.0
+    )
 
 
 def main():
@@ -147,17 +165,6 @@ def main():
     num_iterations = 200
     params = setup_simulation_parameters()
     epsr = create_lens(params)
-
-    x_target = 0e-6
-    y_target = -5e-6
-    radius   = .33e-6
-
-    target_mask = circular_mask(params, x_target, y_target, radius)
-    def wrapped_loss(phase_vals):
-        return loss_function_focus(
-            phase_vals, xp_fixed, params, epsr,
-            target_mask, alpha=1.0
-        )
 
     grad_loss = grad(wrapped_loss)
 
