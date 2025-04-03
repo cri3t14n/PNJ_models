@@ -1,0 +1,27 @@
+Using device: cuda
+Traceback (most recent call last):
+  File "/zhome/aa/6/205647/PNJ/KAN_3/try_model.py", line 19, in <module>
+    prediction = model(input_coord)
+  File "/zhome/aa/6/205647/PNJ/venv/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/zhome/aa/6/205647/PNJ/venv/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/zhome/aa/6/205647/PNJ/venv/lib/python3.9/site-packages/kan/MultKAN.py", line 800, in forward
+    x_numerical, preacts, postacts_numerical, postspline = self.act_fun[l](x)
+  File "/zhome/aa/6/205647/PNJ/venv/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/zhome/aa/6/205647/PNJ/venv/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/zhome/aa/6/205647/PNJ/venv/lib/python3.9/site-packages/kan/KANLayer.py", line 157, in forward
+    y = coef2curve(x_eval=x, grid=self.grid, coef=self.coef, k=self.k)
+  File "/zhome/aa/6/205647/PNJ/venv/lib/python3.9/site-packages/kan/spline.py", line 75, in coef2curve
+    b_splines = B_batch(x_eval, grid, k=k)
+  File "/zhome/aa/6/205647/PNJ/venv/lib/python3.9/site-packages/kan/spline.py", line 40, in B_batch
+    B_km1 = B_batch(x[:,:,0], grid=grid[0], k=k - 1)
+  File "/zhome/aa/6/205647/PNJ/venv/lib/python3.9/site-packages/kan/spline.py", line 40, in B_batch
+    B_km1 = B_batch(x[:,:,0], grid=grid[0], k=k - 1)
+  File "/zhome/aa/6/205647/PNJ/venv/lib/python3.9/site-packages/kan/spline.py", line 40, in B_batch
+    B_km1 = B_batch(x[:,:,0], grid=grid[0], k=k - 1)
+  File "/zhome/aa/6/205647/PNJ/venv/lib/python3.9/site-packages/kan/spline.py", line 38, in B_batch
+    value = (x >= grid[:, :, :-1]) * (x < grid[:, :, 1:])
+RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cuda:0 and cpu!

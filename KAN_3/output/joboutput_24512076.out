@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "/zhome/aa/6/205647/PNJ/KAN_3/try_model.py", line 5, in <module>
+    model = KAN.loadckpt('./model')
+  File "/zhome/aa/6/205647/PNJ/venv/lib/python3.9/site-packages/kan/MultKAN.py", line 568, in loadckpt
+    with open(f'{path}_config.yml', 'r') as stream:
+FileNotFoundError: [Errno 2] No such file or directory: './model_config.yml'

@@ -1,0 +1,46 @@
+
+
+Using device: cuda
+Loading data from 'data.npy' ...
+Number of training samples: 72
+Number of test samples: 19
+
+Normalizing training inputs ...
+Data loaded, normalized, and converted to torch tensors.
+
+Defining the Kolmogorov-Arnold Network (KAN) model ...
+checkpoint directory created: ./model
+saving model version 0.0
+Model defined successfully.
+
+Setting up loss function (MSE) and optimizer (Adam) ...
+Loss function and optimizer ready.
+
+Starting training for 100 epochs...
+Epoch [100/100], Loss: 39.367210
+Training complete.
+
+Loss history plot saved to: results/loss_history.png
+Evaluating model on test data ...
+Plotting and saving 19 test sample comparisons...
+Test sample plot saved to: results/test_sample_0_comparison.png
+Test sample plot saved to: results/test_sample_1_comparison.png
+Test sample plot saved to: results/test_sample_2_comparison.png
+Test sample plot saved to: results/test_sample_3_comparison.png
+Test sample plot saved to: results/test_sample_4_comparison.png
+Test sample plot saved to: results/test_sample_5_comparison.png
+Test sample plot saved to: results/test_sample_6_comparison.png
+Test sample plot saved to: results/test_sample_7_comparison.png
+Test sample plot saved to: results/test_sample_8_comparison.png
+Test sample plot saved to: results/test_sample_9_comparison.png
+Test sample plot saved to: results/test_sample_10_comparison.png
+Test sample plot saved to: results/test_sample_11_comparison.png
+Test sample plot saved to: results/test_sample_12_comparison.png
+Test sample plot saved to: results/test_sample_13_comparison.png
+Test sample plot saved to: results/test_sample_14_comparison.png
+Test sample plot saved to: results/test_sample_15_comparison.png
+Test sample plot saved to: results/test_sample_16_comparison.png
+Test sample plot saved to: results/test_sample_17_comparison.png
+Test sample plot saved to: results/test_sample_18_comparison.png
+
+All outputs saved. Process completed.

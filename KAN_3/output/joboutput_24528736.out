@@ -1,0 +1,13 @@
+Using device: cuda
+Number of test samples: 19
+
+Traceback (most recent call last):
+  File "/zhome/aa/6/205647/PNJ/KAN_3/try_model.py", line 55, in <module>
+    test_input_norm = input_scaler.transform(test_input)
+  File "/zhome/aa/6/205647/PNJ/venv/lib/python3.9/site-packages/sklearn/utils/_set_output.py", line 319, in wrapped
+    data_to_wrap = f(self, X, *args, **kwargs)
+  File "/zhome/aa/6/205647/PNJ/venv/lib/python3.9/site-packages/sklearn/preprocessing/_data.py", line 528, in transform
+    check_is_fitted(self)
+  File "/zhome/aa/6/205647/PNJ/venv/lib/python3.9/site-packages/sklearn/utils/validation.py", line 1757, in check_is_fitted
+    raise NotFittedError(msg % {"name": type(estimator).__name__})
+sklearn.exceptions.NotFittedError: This MinMaxScaler instance is not fitted yet. Call 'fit' with appropriate arguments before using this estimator.

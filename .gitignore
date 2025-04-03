@@ -1,0 +1,14 @@
+# Ignore the virtual environment folder
+venv/
+
+# Ignore macOS resource files
+.DS_Store
+._DS_Store
+._.
+
+# Ignore HPC alias files
+DTU_HPC alias
+._DTU_HPC alias
+
+# Ignore .lsf files
+*.lsf

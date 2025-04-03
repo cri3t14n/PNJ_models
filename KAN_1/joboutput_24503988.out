@@ -1,0 +1,70 @@
+
+
+Using device: cuda
+Outputs will be saved in 'results_1' folder.
+
+Loading data from 'data.npy' ...
+Number of training samples: 72
+Number of test samples: 19
+
+Normalizing training inputs ...
+Data loaded, normalized, and converted to torch tensors.
+
+Defining the Kolmogorov-Arnold Network (KAN) model ...
+checkpoint directory created: ./model
+saving model version 0.0
+Model defined successfully.
+
+Setting up loss function (MSE) and optimizer (Adam) ...
+Loss function and optimizer ready.
+
+Starting training for 1000 epochs...
+Epoch [100/1000], Loss: 38.534336
+Epoch [200/1000], Loss: 28.655353
+Epoch [300/1000], Loss: 16.882674
+Epoch [400/1000], Loss: 12.390722
+Epoch [500/1000], Loss: 11.319412
+Epoch [600/1000], Loss: 10.440362
+Epoch [700/1000], Loss: 9.611285
+Epoch [800/1000], Loss: 8.725525
+Epoch [900/1000], Loss: 7.810867
+Epoch [1000/1000], Loss: 6.967861
+Training complete.
+
+Trained model state saved to: results_1/kan_model_1.pth
+
+Evaluating model on training data ...
+Loss history plot saved to: results_1/loss_history_1.png
+Training sample plot saved to: results_1/train_sample_0_comparison.png
+Training sample plot saved to: results_1/train_sample_1_comparison.png
+Training sample plot saved to: results_1/train_sample_2_comparison.png
+Training sample plot saved to: results_1/train_sample_3_comparison.png
+Training sample plot saved to: results_1/train_sample_4_comparison.png
+Training sample plot saved to: results_1/train_sample_5_comparison.png
+Training sample plot saved to: results_1/train_sample_6_comparison.png
+Training sample plot saved to: results_1/train_sample_7_comparison.png
+Training sample plot saved to: results_1/train_sample_8_comparison.png
+Training sample plot saved to: results_1/train_sample_9_comparison.png
+Evaluating model on test data ...
+Plotting and saving 19 test sample comparisons...
+Test sample plot saved to: results_1/test_sample_0_comparison.png
+Test sample plot saved to: results_1/test_sample_1_comparison.png
+Test sample plot saved to: results_1/test_sample_2_comparison.png
+Test sample plot saved to: results_1/test_sample_3_comparison.png
+Test sample plot saved to: results_1/test_sample_4_comparison.png
+Test sample plot saved to: results_1/test_sample_5_comparison.png
+Test sample plot saved to: results_1/test_sample_6_comparison.png
+Test sample plot saved to: results_1/test_sample_7_comparison.png
+Test sample plot saved to: results_1/test_sample_8_comparison.png
+Test sample plot saved to: results_1/test_sample_9_comparison.png
+Test sample plot saved to: results_1/test_sample_10_comparison.png
+Test sample plot saved to: results_1/test_sample_11_comparison.png
+Test sample plot saved to: results_1/test_sample_12_comparison.png
+Test sample plot saved to: results_1/test_sample_13_comparison.png
+Test sample plot saved to: results_1/test_sample_14_comparison.png
+Test sample plot saved to: results_1/test_sample_15_comparison.png
+Test sample plot saved to: results_1/test_sample_16_comparison.png
+Test sample plot saved to: results_1/test_sample_17_comparison.png
+Test sample plot saved to: results_1/test_sample_18_comparison.png
+
+All outputs saved. Process completed.
