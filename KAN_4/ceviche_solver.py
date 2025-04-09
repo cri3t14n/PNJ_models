@@ -28,10 +28,9 @@ example_phase_points = np.array([
 ])
 
 xp_fixed = np.array(example_phase_points[:, 0])  
-fp_init  =  example_phase_points[:, 1] * 0
 
 #Autograd interp
-def differentiable_interpolation(x, xp_fixed, fp):
+def differentiable_interpolation(x, fp):
     x = np.minimum(np.maximum(x, xp_fixed[0]), xp_fixed[-1])
     indices = np.searchsorted(xp_fixed, x) - 1
     indices = np.maximum(np.minimum(indices, len(xp_fixed) - 2), 0)
@@ -102,7 +101,7 @@ def create_lens(params):
 
 
 
-def create_source(params, xp_fixed, phase_vals):
+def create_source(params, phase_vals):
     NPML = params['NPML']
     k0 = float(params['k0'])
     interior = (slice(NPML[0], -NPML[0]), slice(NPML[1], -NPML[1]))
@@ -112,7 +111,7 @@ def create_source(params, xp_fixed, phase_vals):
     y_slice = params['Y'][interior][:, -1]
     left_part = np.zeros((Nx_int, Ny_int - 1), dtype=np.complex128)
 
-    phase_profile = differentiable_interpolation(x_slice, xp_fixed, phase_vals)
+    phase_profile = differentiable_interpolation(x_slice, phase_vals)
     arg = k0 * y_slice + phase_profile  #This looks weird but it helped the autograd be okay with the operations
     right_column = (np.cos(arg) + 1j * np.sin(arg))[:, None] 
     interior_source = np.concatenate([left_part, right_column], axis=1)
@@ -129,72 +128,35 @@ def run_simulation(params, epsr, source):
     print("Running simulation...")
     simulation = ceviche.fdfd_ez(params['omega'], params['dL'], epsr, params['NPML'])
     Ez = np.array(simulation.solve(source)[2])
-    return Ez/np.max(np.abs(Ez))
+    return np.abs(Ez)/np.max(np.abs(Ez))
 
 
-def loss_function_focus(phase_vals, xp_fixed, params, epsr, target_mask, alpha=1.0):
-    source = create_source(params, xp_fixed, phase_vals)
+def loss_function_focus(phase_vals, params, epsr, x_target, y_target, radius = 0.33e-6, alpha=1.0):
+    target_mask = circular_mask(params, x_target, y_target, radius)
+    source = create_source(params, phase_vals)
     Ez = run_simulation(params, epsr, source)
-    
-    #saved Ez to file
-    ax2 = ceviche.viz.abs(Ez, outline=np.real(epsr), cbar=False, cmap='RdBu')
-    ax2.plot(params['x_coords_pml'], params['y_coords_pml'], 'k')
-    ax2.set_title("Abs Ez")
+
+    Ez_plot = np.abs(Ez).T
+    plt.figure()
+    plt.imshow(Ez_plot, extent=[params['x_coords_pml'][0]*1e6, params['x_coords_pml'][-1]*1e6,
+              params['y_coords_pml'][0]*1e6, params['y_coords_pml'][-1]*1e6], origin='lower', cmap='viridis')
+    plt.colorbar(label='|Ez|')
+    plt.plot(x_target*1e6, y_target*1e6, 'rx', markersize=10, label="Target Center")
+    plt.title("Abs Ez")
+    plt.legend()
     plt.show()
 
-    intensity = np.abs(Ez)**2
-    region_intensity = intensity[target_mask]
+    region_intensity = Ez[target_mask]
     mean_intensity = np.mean(region_intensity)
     return -alpha * mean_intensity
+
+
+def wrapped_loss(phase_vals, x_target, y_target):
+    return loss_function_focus(
+        phase_vals, params, epsr,
+        x_target, y_target)
 
 
 params = setup_simulation_parameters()
 epsr = create_lens(params)
 
-def wrapped_loss(phase_vals, x_target, y_target, radius = 0.33e-6):
-    target_mask = circular_mask(params, x_target, y_target, radius)
-    return loss_function_focus(
-        phase_vals, xp_fixed, params, epsr,
-        target_mask, alpha=1.0
-    )
-
-
-def main():
-    phase_vals = fp_init
-    learning_rate = 5e-2
-    num_iterations = 200
-    params = setup_simulation_parameters()
-    epsr = create_lens(params)
-
-    grad_loss = grad(wrapped_loss)
-
-    for step in range(num_iterations):
-        loss_val = wrapped_loss(phase_vals)
-        print(f"Step {step}: Loss = {loss_val}")
-        phase_grad = grad_loss(phase_vals)
-        phase_vals = phase_vals - learning_rate * phase_grad
-        print("phase_grad:", phase_grad)
-        print("phase_vals:", phase_vals)
-
-        if step % 10 == 0:
-            source = create_source(params, xp_fixed, phase_vals)
-            Ez = run_simulation(params, epsr, source)
-            ax2 = ceviche.viz.abs(Ez, outline=np.real(epsr), cbar=False, cmap='RdBu')
-            ax2.plot(params['x_coords_pml'], params['y_coords_pml'], 'k')
-            ax2.set_title(f"Abs Ez {step}")
-            plt.savefig(f'output/ez_field_{step}.png', dpi=300, bbox_inches='tight')
-
-    source = create_source(params, xp_fixed, phase_vals)
-    Ez = run_simulation(params, epsr, source)
-    ax2 = ceviche.viz.abs(Ez, outline=np.real(epsr), cbar=False, cmap='RdBu')
-    ax2.plot(params['x_coords_pml'], params['y_coords_pml'], 'k')
-    ax2.set_title("Abs Ez")
-    plt.savefig('output/ez_field.png', dpi=300, bbox_inches='tight')
-    plt.show()
-
-    np.savetxt('output/final_Ez.txt', Ez)
-    np.savetxt('output/final_phase_points.txt', phase_vals)
-
-
-if __name__ == "__main__":
-    main()

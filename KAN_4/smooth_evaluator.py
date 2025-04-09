@@ -1,5 +1,4 @@
 import autograd.numpy as np
-import ot
 
 def q_factor_at_point(Ez, X, Y, x_target, y_target, radius=0.3e-6):
     dist = np.sqrt( (X - x_target)**2 + (Y - y_target)**2 )
