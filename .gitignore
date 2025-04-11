@@ -1,5 +1,6 @@
 # Ignore the virtual environment folder
 venv/
+KAN_4/data_with_fields.npy
 
 # Ignore macOS resource files
 .DS_Store

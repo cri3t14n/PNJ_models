@@ -1,8 +1,6 @@
 import autograd.numpy as np
-import matplotlib.pyplot as plt
-from smooth_evaluator import circular_mask, build_region_cost_matrix
-from autograd import grad
 import ceviche
+
 
 example_phase_points = np.array([
     [-3.999999989900970832e-06, 1.209787011146545410e+00],
@@ -125,38 +123,7 @@ def create_source(params, phase_vals):
 
 
 def run_simulation(params, epsr, source):
-    print("Running simulation...")
     simulation = ceviche.fdfd_ez(params['omega'], params['dL'], epsr, params['NPML'])
     Ez = np.array(simulation.solve(source)[2])
     return np.abs(Ez)/np.max(np.abs(Ez))
-
-
-def loss_function_focus(phase_vals, params, epsr, x_target, y_target, radius = 0.33e-6, alpha=1.0):
-    target_mask = circular_mask(params, x_target, y_target, radius)
-    source = create_source(params, phase_vals)
-    Ez = run_simulation(params, epsr, source)
-
-    Ez_plot = np.abs(Ez).T
-    plt.figure()
-    plt.imshow(Ez_plot, extent=[params['x_coords_pml'][0]*1e6, params['x_coords_pml'][-1]*1e6,
-              params['y_coords_pml'][0]*1e6, params['y_coords_pml'][-1]*1e6], origin='lower', cmap='viridis')
-    plt.colorbar(label='|Ez|')
-    plt.plot(x_target*1e6, y_target*1e6, 'rx', markersize=10, label="Target Center")
-    plt.title("Abs Ez")
-    plt.legend()
-    plt.show()
-
-    region_intensity = Ez[target_mask]
-    mean_intensity = np.mean(region_intensity)
-    return -alpha * mean_intensity
-
-
-def wrapped_loss(phase_vals, x_target, y_target):
-    return loss_function_focus(
-        phase_vals, params, epsr,
-        x_target, y_target)
-
-
-params = setup_simulation_parameters()
-epsr = create_lens(params)
 

@@ -1,102 +1,127 @@
-import torch
-import numpy as np
+import warnings
+warnings.filterwarnings("ignore", message="std(): degrees of freedom is <= 0")
+
+from kan import *
 from autograd import grad
-import torch.nn as nn
-import torch.optim as optim
-from ceviche_solver import wrapped_loss
+import autograd.numpy as np
+from ceviche_solver import setup_simulation_parameters, create_lens, create_source, run_simulation
+from load import load_data
 
-grad_loss = grad(wrapped_loss)
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-print("Loading data from 'data.npy' ...")
-data = np.load('data.npy', allow_pickle=True).item()
-
-train_input = np.array(data['train_input'])   
-train_label = np.array(data['train_label'])   
-test_input  = np.array(data['test_input'])    
-test_label  = np.array(data['test_label'])    
-
-print(f"Number of training samples: {len(train_input)}")
-print(f"Number of test samples: {len(test_input)}\n")
-
-X_train = torch.tensor(train_input, dtype=torch.float32)
-y_train = torch.tensor(train_label, dtype=torch.float32)
-X_test  = torch.tensor(test_input,  dtype=torch.float32)
-y_test  = torch.tensor(test_label,  dtype=torch.float32)
+X_train, y_train, X_test, y_test = load_data()
 
 
-class SimLossFunction(torch.autograd.Function):
+######################################
+# Define the loss function
+######################################
+
+params = setup_simulation_parameters()
+epsr   = create_lens(params)
+
+x_min, x_max = -4e-6, 4e-6
+y_min, y_max = -8e-6, 1e-6
+
+region_mask = (
+    (params['X'] >= x_min) & (params['X'] < x_max) &
+    (params['Y'] >= y_min) & (params['Y'] < y_max)
+)
+
+def loss_function_field_l2(phase_vals, params, epsr, E_target, region_mask):
+    source = create_source(params, phase_vals)
+    Ez_pred = run_simulation(params, epsr, source)
+    difference = (Ez_pred - E_target)[region_mask]
+    mse = np.mean(np.abs(difference)**2)
+    print("MSE:", mse)
+    return mse
+
+
+def grad_loss(phase_np, E_target_np):
+    def loss_wrapper(phase):
+        return loss_function_field_l2(
+            phase_vals=phase,
+            params=params,
+            epsr=epsr,
+            E_target=E_target_np,
+            region_mask=region_mask  
+        )
+    grad_fn = grad(loss_wrapper)
+    return grad_fn(phase_np)
+
+
+######################################
+# Define the gradient of the loss function
+######################################
+
+gradient_scaling_factor = 0.3
+
+
+class FieldL2LossFunction(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, predicted_phase_tensor, x_target_tensor, y_target_tensor):
-        phase_vals = predicted_phase_tensor.detach().cpu().numpy()
-        x_target_np = float(x_target_tensor.item())
-        y_target_np = float(y_target_tensor.item())
-        loss_val = wrapped_loss(phase_vals, x_target_np, y_target_np) # sim
-        ctx.save_for_backward(predicted_phase_tensor, x_target_tensor, y_target_tensor) # for backward pass
-        return torch.tensor(loss_val, dtype=predicted_phase_tensor.dtype,
-                            device=predicted_phase_tensor.device)
-
+    def forward(ctx, phase_tensor, E_target_tensor):
+        print("->" + "   Forward pass")
+        phase_np = phase_tensor.detach().cpu().numpy()
+        E_target_np = E_target_tensor.detach().cpu().numpy()
+        loss_val = loss_function_field_l2(phase_np, params, epsr, E_target_np, region_mask=region_mask)
+        ctx.save_for_backward(phase_tensor, E_target_tensor)
+        return phase_tensor.new_tensor(loss_val, requires_grad=True)
+    
     @staticmethod
     def backward(ctx, grad_output):
-        predicted_phase_tensor, x_target_tensor, y_target_tensor = ctx.saved_tensors
-        phase_vals = predicted_phase_tensor.detach().cpu().numpy()
-        x_target_np = float(x_target_tensor.item())
-        y_target_np = float(y_target_tensor.item())
+        print("<-" + "   Backwards pass")
+        phase_tensor, E_target_tensor = ctx.saved_tensors   
+        phase_np = phase_tensor.detach().cpu().numpy()
+        E_target_np = E_target_tensor.detach().cpu().numpy()
+        dldphase_np = grad_loss(phase_np, E_target_np)
+        dldphase_torch = torch.tensor(dldphase_np, dtype=phase_tensor.dtype, device=phase_tensor.device)
+        print("grad_output:", grad_output)
+        return grad_output * (gradient_scaling_factor * dldphase_torch), None
 
-        # get gradient wrt phase
-        phase_grad_np = grad_loss(phase_vals, x_target_np, y_target_np)
-        print(f"Gradient wrt phase: {phase_grad_np}")
-        phase_grad_torch = torch.tensor(phase_grad_np,
-                                        dtype=predicted_phase_tensor.dtype,
-                                        device=grad_output.device)
-        return grad_output * phase_grad_torch, None, None
-
-def sim_loss(predicted_phase_tensor, x_target_tensor, y_target_tensor):
-    return SimLossFunction.apply(predicted_phase_tensor, x_target_tensor, y_target_tensor)
+def field_l2_loss(phase_tensor, E_target_tensor):
+    return FieldL2LossFunction.apply(phase_tensor, E_target_tensor)
 
 
-class PhasePredictor(nn.Module):
-    def __init__(self, in_dim=2, hidden=32, out_dim=20):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(in_dim, hidden),
-            nn.ReLU(),
-            nn.Linear(hidden, out_dim)
-        )
-    def forward(self, x):
-        return self.net(x)  
+######################################
+# Set up the model and train
+######################################
 
 
-def train_with_simulation(X_train, epochs=10, lr=1e-3):
-    model = PhasePredictor(in_dim=2, hidden=32, out_dim=20)
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+model = KAN(width=[2,2,20], grid=5, k=3, seed=1, device=device)
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    for epoch in range(epochs):
-        sim_loss_vals = []
+def train(steps=10, lr=1.0):
+    model.train()
+    optimizer = LBFGS(model.parameters(), lr=lr, max_iter=steps, history_size=10, line_search_fn="strong_wolfe")
 
-        for i in range(len(X_train)):
-            optimizer.zero_grad()
-            phase_i = model(X_train[i].unsqueeze(0)).squeeze(0)
-            print(f"Phase for sample {i}: {phase_i}")
-            x_t = X_train[i, 0]
-            y_t = X_train[i, 1]
-            print(f"Computing Sim for coordinates: ({x_t}, {y_t})")
-            sim_val_i = sim_loss(phase_i, x_t, y_t)
-            print(f"Sim loss for sample {i}: {sim_val_i.item()}")
-            sim_loss_vals.append(sim_val_i)
-            sim_val_i.backward()
-            optimizer.step()
+    sample_idx = 0  # pick one sample for demonstration
+    x_sample   = X_train[sample_idx]  # e.g. shape [N_features] 
+    E_target   = y_train[sample_idx]  # shape [Nx, Ny] (the target field)
+    print("Target location:", x_sample)
 
-        # Average across the batch
-        final_loss = torch.mean(torch.stack(sim_loss_vals))
-        print(f"Epoch {epoch+1}/{epochs} | Simulation Loss: {final_loss.item():.6f}")
+    def closure():
+        optimizer.zero_grad()
+        predicted_phase = model(x_sample.unsqueeze(0)).squeeze(0)
+        print("Predicted Phase:", predicted_phase)
 
-    return model
+        phase_np = predicted_phase.detach().cpu().numpy()
+        Ez_for_plot = run_simulation(params, epsr, create_source(params, phase_np))
+        plt.figure()
+        plt.imshow(np.abs(Ez_for_plot.T), cmap='hot', interpolation='nearest')
+        plt.title('Predicted Field')
+        plt.colorbar()
+        plt.show()
+
+        loss_value = field_l2_loss(predicted_phase, E_target)
+        loss_value.backward()  
+        return loss_value
+
+    for step in range(steps):
+        loss_val = optimizer.step(closure)
+        print(f"Step {step+1}/{steps} | Loss: {loss_val.item():.6f}")
+
+    print("Done training on sample_idx =", sample_idx)
 
 if __name__ == "__main__":
-    print("Training model with simulation loss ...")
-    trained_model = train_with_simulation(X_train, epochs=10, lr=1e-3)
-    trained_model.eval()
-    with torch.no_grad():
-        preds = trained_model(X_train[:5])
-        print("\nPredicted phases for first 5 training samples:")
-        print(preds)
+    print("Training model ...")
+    train()
+    print("Model training complete.")
