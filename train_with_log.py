@@ -1,5 +1,7 @@
 import os
 import warnings
+import time
+import json
 from kan import *
 from autograd import grad
 import autograd.numpy as np
@@ -13,129 +15,132 @@ os.makedirs("KAN_4/output", exist_ok=True)
 os.makedirs("KAN_4/model", exist_ok=True)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-X_train, y_train, X_test, y_test = load_data()
+training_log = {
+    "epoch_loss": [],
+    "gradient_norms": [],
+    "epoch_times": [],
+    "config": {
+        "lr": 0.1,
+        "max_iter": 5,
+        "history_size": 10,
+        "epochs": 7,
+        "dataset_size": None
+    }
+}
 
-X_train_scaled = X_train * 1e6
-X_test_scaled  = X_test * 1e6
+X_train, y_train, X_test, y_test = load_data()
+training_log["config"]["dataset_size"] = len(X_train)
 
 ######################################
-# Setup simulation parameters
+# Define the loss function
 ######################################
 
 params = setup_simulation_parameters()
-epsr   = create_lens(params)
+epsr = create_lens(params)
 
-# Define region mask in physical units (unchanged)
 x_min, x_max = -8e-6, 8e-6
-y_min, y_max = -8e-6, 8e-6
+y_min, y_max = -8e-6, 1e-6
 
 region_mask = (
     (params['X'] >= x_min) & (params['X'] < x_max) &
     (params['Y'] >= y_min) & (params['Y'] < y_max)
 )
 
-def get_target_index(params, x_target, y_target):
-    diff = np.abs(params['X'] - x_target) + np.abs(params['Y'] - y_target)
-    idx = np.unravel_index(np.argmin(diff), diff.shape)
-    return idx
-
-######################################
-# Modified loss function with intensity metric
-######################################
-
-def loss_function_field_l2(phase_vals, params, epsr, E_target, region_mask, target_coord, target_alpha=1):
+def loss_function_field_l2(phase_vals, params, epsr, E_target, region_mask):
     source = create_source(params, phase_vals)
     Ez_pred = run_simulation(params, epsr, source)
     mse = np.mean(np.abs(((Ez_pred - E_target)[region_mask])**2))
     norm_factor = np.mean(np.abs(E_target[region_mask])**2)
-    target_strength = np.abs(Ez_pred[get_target_index(params, target_coord[0], target_coord[1])])
-    target_loss = (target_strength - 1)**2
-    total_loss = mse / norm_factor + target_alpha * target_loss
-    print("Total Loss:", total_loss, " | Normed MSE:", mse/norm_factor, " | Target Strength:", target_strength)
-    return total_loss
+    print("Normed MSE:", mse / norm_factor)
+    return mse / norm_factor
 
-def grad_loss(phase_np, E_target_np, target_coord):
+def grad_loss(phase_np, E_target_np):
     def loss_wrapper(phase):
         return loss_function_field_l2(
             phase_vals=phase,
             params=params,
             epsr=epsr,
             E_target=E_target_np,
-            region_mask=region_mask,
-            target_coord=target_coord  
+            region_mask=region_mask
         )
     grad_fn = grad(loss_wrapper)
     return grad_fn(phase_np)
 
 ######################################
-# Custom autograd function for the loss
+# Define the gradient 
 ######################################
 
 class FieldL2LossFunction(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, phase_tensor, E_target_tensor, target_coord_tensor):
+    def forward(ctx, phase_tensor, E_target_tensor):
+        print("->" + "   Forward pass")
         phase_np = phase_tensor.detach().cpu().numpy()
         E_target_np = E_target_tensor.detach().cpu().numpy()
-        target_coord = (target_coord_tensor[0].item(), target_coord_tensor[1].item())
-        loss_val = loss_function_field_l2(phase_np, params, epsr, E_target_np, region_mask, target_coord)
-        ctx.save_for_backward(phase_tensor, E_target_tensor, target_coord_tensor)
+        loss_val = loss_function_field_l2(phase_np, params, epsr, E_target_np, region_mask=region_mask)
+        ctx.save_for_backward(phase_tensor, E_target_tensor)
         return phase_tensor.new_tensor(loss_val, requires_grad=True)
     
     @staticmethod
     def backward(ctx, grad_output):
-        print("\n<-   Backwards pass")
-        phase_tensor, E_target_tensor, target_coord_tensor = ctx.saved_tensors
+        print("<-" + "   Backwards pass")
+        phase_tensor, E_target_tensor = ctx.saved_tensors
         phase_np = phase_tensor.detach().cpu().numpy()
         E_target_np = E_target_tensor.detach().cpu().numpy()
-        target_coord = (target_coord_tensor[0].item(), target_coord_tensor[1].item())
-        dldphase_np = grad_loss(phase_np, E_target_np, target_coord)
+        dldphase_np = grad_loss(phase_np, E_target_np)
         dldphase_torch = torch.tensor(dldphase_np, dtype=phase_tensor.dtype, device=phase_tensor.device)
-        print("Gradient stats:", grad_output, dldphase_torch)
-        return grad_output * dldphase_torch, None, None
+        return grad_output * dldphase_torch, None
 
-def field_l2_loss(phase_tensor, E_target_tensor, target_coord_tensor):
-    return FieldL2LossFunction.apply(phase_tensor, E_target_tensor, target_coord_tensor)
+def field_l2_loss_torch(phase_tensor, E_target_tensor):
+    return FieldL2LossFunction.apply(phase_tensor, E_target_tensor)
 
 ######################################
-# Set up the model and training
+# Set up the model and train
 ######################################
 
-# model = KAN(width=[2, 64, 64, 20], grid=5, k=3, seed=1, device=device)
-# model = KAN(width=[2, 128, 128, 64, 20], grid=5, k=3, seed=1, device=device)
-model = KAN(width=[3, 128, 128, 64, 20], grid=5, k=3, seed=1, device=device)
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+model = KAN(width=[2,2,20], grid=5, k=3, seed=1, device=device)
 
-def train(epochs=7, lr=3e-2):
-    print("\nTraining on device:", device, "with learning rate:", lr)
+def train(epochs=7, lr=1e-1):
     model.train()
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    N = 2
+    optimizer = torch.optim.LBFGS(model.parameters(), lr=lr, max_iter=5, history_size=10, line_search_fn="strong_wolfe")
+    N = len(X_train)
+    start_training = time.time()
+    global current_grad_norm
+    current_grad_norm = 0.0
     for epoch in range(epochs):
-        print(f"\n\nEpoch {epoch+1}/{epochs} | Training on {N} sample(s)")
-        
+        print(f"\n\nEpoch {epoch+1}/{epochs} | Training on {N} samples")
+        start_epoch = time.time()
         def closure():
             optimizer.zero_grad()
             total_loss = 0.0
             for i in range(N):
-                x_sample = X_train_scaled[i].to(device)
+                x_sample = X_train[i].to(device)
                 E_target = y_train[i].to(device)
-                x_target, y_target = x_sample[0].item() / 1e6, x_sample[1].item() / 1e6
-                target_coord_tensor = torch.tensor([x_target, y_target], device=device, dtype=torch.float32)
                 predicted_phase = model(x_sample.unsqueeze(0)).squeeze(0)
-                print(f"\nSample {i}, Predicted phase: {predicted_phase}, target: {x_sample}")
-                loss_i = field_l2_loss(predicted_phase, E_target, target_coord_tensor)
+                loss_i = field_l2_loss_torch(predicted_phase, E_target)
                 total_loss += loss_i
             total_loss = total_loss / N
             total_loss.backward()
+            total_norm = 0.0
+            for p in model.parameters():
+                if p.grad is not None:
+                    total_norm += p.grad.norm().item()**2
+            total_norm = total_norm**0.5
+            global current_grad_norm
+            current_grad_norm = total_norm
             return total_loss
-        
         loss_val = optimizer.step(closure)
-        print(f"\nFinished Epoch {epoch+1}/{epochs} | Normed Loss: {loss_val.item():.6f}")
+        epoch_time = time.time() - start_epoch
+        training_log["epoch_times"].append(epoch_time)
+        training_log["epoch_loss"].append(loss_val.item())
+        training_log["gradient_norms"].append(current_grad_norm)
+        print(f"Epoch {epoch+1}/{epochs} | Normed Loss: {loss_val.item():.6f} | Time: {epoch_time:.2f}s | Grad Norm: {current_grad_norm:.6f}")
         
         for i in range(N):
             sample_folder = os.path.join("KAN_4", "output", f"sample_{i:04d}")
             os.makedirs(sample_folder, exist_ok=True)
             with torch.no_grad():
-                sample = X_train_scaled[i].to(device)
+                sample = X_train[i].to(device)
                 E_target_sample = y_train[i].to(device)
                 predicted_phase = model(sample.unsqueeze(0)).squeeze(0)
                 phase_np = predicted_phase.detach().cpu().numpy()
@@ -146,12 +151,12 @@ def train(epochs=7, lr=3e-2):
                           params['y_coords_pml'][0]*1e6, params['y_coords_pml'][-1]*1e6]
                 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
                 im1 = ax1.imshow(np.abs(Ez_pred.T), cmap='hot', interpolation='nearest', origin='lower', extent=extent)
-                ax1.scatter(sample[0].item(), sample[1].item(), c='cyan', marker='x', s=100, label='Input (x,y)')
+                ax1.scatter(sample[0].item()*1e6, sample[1].item()*1e6, c='cyan', marker='x', s=100, label='Input (x,y)')
                 ax1.set_title(f'Sample {i:04d} - Predicted Field\nEpoch {epoch+1}')
                 ax1.legend()
                 fig.colorbar(im1, ax=ax1, label='|Ez_pred|')
                 im2 = ax2.imshow(np.abs(E_target_np.T), cmap='hot', interpolation='nearest', origin='lower', extent=extent)
-                ax2.scatter(sample[0].item(), sample[1].item(), c='cyan', marker='x', s=100, label='Input (x,y)')
+                ax2.scatter(sample[0].item()*1e6, sample[1].item()*1e6, c='cyan', marker='x', s=100, label='Input (x,y)')
                 ax2.set_title(f'Sample {i:04d} - Target Field')
                 ax2.legend()
                 fig.colorbar(im2, ax=ax2, label='|Ez_target|')
@@ -159,11 +164,19 @@ def train(epochs=7, lr=3e-2):
                 plot_filename = os.path.join(sample_folder, f"epoch_{epoch+1:04d}.png")
                 fig.savefig(plot_filename)
                 print(f"Saved comparison plot for sample {i:04d} at epoch {epoch+1} to {plot_filename}")
+                phase_info = {
+                    "predicted_phase": phase_np.tolist(),
+                    "loss": loss_val.item()
+                }
+                with open(os.path.join(sample_folder, f"phase_info_epoch_{epoch+1:04d}.json"), "w") as f:
+                    json.dump(phase_info, f, indent=4)
                 plt.close(fig)
-
-    #     torch.save(model.state_dict(), f"KAN_4/model/model_epoch_{epoch+1:04d}.pth")
-
-    # torch.save(model.state_dict(), "KAN_4/model/final_model.pth")
+        torch.save(model.state_dict(), f"KAN_4/model/model_epoch_{epoch+1:04d}.pth")
+    total_training_time = time.time() - start_training
+    torch.save(model.state_dict(), "KAN_4/model/final_model.pth")
+    training_log["total_training_time"] = total_training_time
+    with open("KAN_4/model/training_log.json", "w") as f:
+        json.dump(training_log, f, indent=4)
     print("Training complete on entire training set.")
 
 if __name__ == "__main__":
