@@ -20,13 +20,13 @@ X_train_scaled = X_train * 1e6
 X_test_scaled  = X_test * 1e6
 
 ######################################
-# Setup simulation parameters
+# Setup simulation 
 ######################################
 
 params = setup_simulation_parameters()
 epsr   = create_lens(params)
 
-# Define region mask in physical units (unchanged)
+# Define region mask 
 x_min, x_max = -8e-6, 8e-6
 y_min, y_max = -8e-6, 1e-6
 
@@ -41,7 +41,7 @@ def get_target_index(params, x_target, y_target):
     return idx
 
 ######################################
-# Modified loss function with intensity metric
+# Loss function 
 ######################################
 
 def loss_function_field_l2(phase_vals, params, epsr, E_target, region_mask, target_coord, target_alpha=0.6):
@@ -69,7 +69,7 @@ def grad_loss(phase_np, E_target_np, target_coord):
     return grad_fn(phase_np)
 
 ######################################
-# Custom autograd function for the loss
+# Custom Autograd 
 ######################################
 
 class FieldL2LossFunction(torch.autograd.Function):
@@ -98,7 +98,7 @@ def field_l2_loss(phase_tensor, E_target_tensor, target_coord_tensor):
     return FieldL2LossFunction.apply(phase_tensor, E_target_tensor, target_coord_tensor)
 
 ######################################
-# Set up the model, embedding, and training
+# Set up the model
 ######################################
 
 #Embedding is needed to prevent the model from learning the same phase for all samples
@@ -108,11 +108,11 @@ embedding = torch.nn.Embedding(num_embeddings=num_samples, embedding_dim=embeddi
 model_input_dim = 2 + embedding_dim
 model = KAN(width=[model_input_dim, 128, 128, 64, 20], grid=5, k=3, seed=1, device=device)
 
-def train(epochs=20, lr=3e-3):
+def train(epochs=15, lr=3e-3):
     print("\nTraining on device:", device, "with learning rate:", lr)
     model.train()
     optimizer = torch.optim.Adam(list(model.parameters()) + list(embedding.parameters()), lr=lr)
-    N = 2 # len(X_train)
+    N = len(X_train)
     for epoch in range(epochs):
         print(f"\n\nEpoch {epoch+1}/{epochs} | Training on {N} sample(s)")
         
